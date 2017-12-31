@@ -4,82 +4,98 @@ import sys
 import struct
 import pyaudio
 
-def swar2freq(swar,basefreq):
+SWAR_FREQUENCY_MAPPER = {
+    's':{
+        'shuddh':1,
+        'vakra':1, # Error handling mechanism.
+    },
+    'r':{
+        'shuddh': 1.125,
+        'vakra': 1.058
+    },
+    'g':{
+        'shuddh': 1.266,
+        'vakra': 1.188
+    },
+    'm':{
+        'shuddh': 1.333,
+        'vakra': 1.412
+    },
+    'p':{
+        'shuddh': 1.5,
+        'vakra': 1.5 # Error handling mechanism
+    },
+    'd':{
+        'shuddh': 1.688,
+        'vakra': 1.586
+    },
+    'n':{
+        'shuddh': 1.898,
+        'vakra': 1.78
+    },
+    '0': 0,
+}
+VALID_SWAR_INPUTS_SUBSET_1 = set(['<', '>'])
+VALID_SWAR_INPUTS_SUBSET_2 = set(['s', 'r', 'g', 'm', 'p', 'd', 'n'])
+VALID_SWAR_INPUTS = set(
+    list(VALID_SWAR_INPUTS_SUBSET_1) + list(VALID_SWAR_INPUTS_SUBSET_2)
+)
+
+
+def swar_to_frequency(swar, base_frequency):
     """
-    Contains a dictionary (mapper) that stores relates the swar to 
+    Uses a dictionary (mapper) that relates the swar to
     its defined frequency. I have used the Pythagorean ratios
-    to define the relative frequencies based a fixed basefreq
+    to define the relative frequencies based a fixed base_frequency
     variable that is set to 440 Hz by default, but can be speci-
     fied by the User.
-    This function interprets the octave specifier which halves 
+    This function interprets the octave specifier which halves
     or doubles the value of the defined note to shift down or up
     on the scale.
-    """
-    basefreq_float=float(basefreq) # Perform type conversion once
-
-    mapper={
-        's':{
-            'shuddh':1,
-            'vakra':1, # Error handling mechanism.
-            },
-        'r':{
-            'shuddh': 1.125,
-            'vakra': 1.058
-            },
-        'g':{
-            'shuddh': 1.266,
-            'vakra': 1.188
-            },
-        'm':{
-            'shuddh': 1.333,
-            'vakra': 1.412
-            },
-        'p':{
-            'shuddh': 1.5,
-            'vakra': 1.5 # Error handling mechanism
-            },
-        'd':{
-            'shuddh': 1.688,
-            'vakra': 1.586
-            },
-        'n':{
-            'shuddh': 1.898,
-            'vakra': 1.78
-            },
-        '0':0,
-        
-    }
-
-    """
     For any other input, including captialization, this function
     will specify 0 Hz. Might not be ideal.
     """
-    allowed_inputs=['s','r','g','m','p','d','n','^','<','>']
+    base_frequency_float = float(base_frequency) # Perform type conversion once
+    first_swar = swar[0]
+    is_swar_valid = first_swar in VALID_SWAR_INPUTS
+    if not is_swar_valid:
+        return SWAR_FREQUENCY_MAPPER.get('0')
 
-    if swar[0] in allowed_inputs:
-        if len(swar)==1:
-            return int(mapper[swar]['shuddh'] * basefreq_float)
-        elif len(swar)==2:
-            if swar[0] in ['<','>']:
-                _oct=swar[0]
-                note=swar[1]
-                return int(octavespecifier(_oct)* mapper[note]['shuddh'] * basefreq_float)
-            elif swar[0] in ['s','r','g','m','p','d','n']:
-                note=swar[0]
-                return int(mapper[note]['vakra']* basefreq_float)
+    swar_length = len(swar)
 
-        elif len(swar)==3:
-            _oct=swar[0]
-            note=swar[1]
-            sor_v=swar[2]
+    if swar_length == 1:
+        shuddh_frequency = SWAR_FREQUENCY_MAPPER.get(swar).get('shuddh')
+        return int(shuddh_frequency * base_frequency_float)
 
-            return int(octavespecifier(_oct)*mapper[note]['vakra']*basefreq_float)
-    else:
-        return mapper['0']
-    
+    if swar_length == 2:
+        if first_swar in VALID_SWAR_INPUTS_SUBSET_1:
+            note = swar[-1]
+            shuddh_frequency = SWAR_FREQUENCY_MAPPER.get(note)('shuddh')
+            return int(
+                octavespecifier(first_swar) *
+                shuddh_frequency *
+                base_frequency_float
+            )
+
+        if first_swar in VALID_SWAR_INPUTS_SUBSET_2:
+            return int(
+                SWAR_FREQUENCY_MAPPER.get(first_swar).get('vakra') *
+                base_frequency_float
+            )
+
+    if swar_length == 3:
+        _oct, note, sor_value = swar
+        vakra_frequency = SWAR_FREQUENCY_MAPPER.get(note).get('vakra')
+        return int(
+            octavespecifier(_oct) *
+            vakra_frequency *
+            base_frequency_float
+        )
+
+
 def octavespecifier(octave):
     """
-    Helper function for swar2freq().
+    Helper function for swar_to_frequency().
     This can be later modified to interpret further lower and 
     higher octaves if the need arises, and not just the 
     adjacent octaves.
@@ -205,7 +221,7 @@ def create_and_save(rawswars,m_duration=1,save_name='test_swars',base_freq=440,a
     converts it to list beats. This is accomplished
     by calling notationreader().
     Next, it calls wf_specifier() to generate the waveform,
-    according to the frequency specified by swar2freq().
+    according to the frequency specified by swar_to_frequency().
     Finally, it writes the .wav file using the wave module.
     """
     # Combines all the waveforms and writes to file
@@ -217,7 +233,7 @@ def create_and_save(rawswars,m_duration=1,save_name='test_swars',base_freq=440,a
     waveform=[]
     for b in bol:
         if len(b)==1:
-            waveform+=wf_specifier(swar2freq(b[0],base_freq),amplitude,sample_rate,m_duration)
+            waveform+=wf_specifier(swar_to_frequency(b[0],base_freq),amplitude,sample_rate,m_duration)
         else:
             if len(b)==0:
                 l=1
@@ -225,7 +241,7 @@ def create_and_save(rawswars,m_duration=1,save_name='test_swars',base_freq=440,a
                 l=len(b)
             sub_duration=1/float(l)
             for _ in b:
-                waveform+=wf_specifier(swar2freq(_,base_freq),amplitude,sample_rate,sub_duration*float(m_duration))
+                waveform+=wf_specifier(swar_to_frequency(_,base_freq),amplitude,sample_rate,sub_duration*float(m_duration))
 
     # Wave file configuration
     print("Writing to ", save_name+".wav")
